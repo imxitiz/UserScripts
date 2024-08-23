@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Messenger Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     0.1
+// @version     0.2
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -27,8 +27,10 @@
 
         if (sidebar && inboxSwitcher) {
             if (!hasInitialized) {
-                sidebar.style.flex = "0 0 20%";
-                sidebar.style.transition = "flex .5s ease-out 0s";
+                sidebar.style.transition = "max-width .5s ease-out";
+                sidebar.style.maxWidth = "0"; // Initial max-width
+                sidebar.style.minWidth = "0"; // Ensure consistent width
+                sidebar.style.margin = "0";
                 hasInitialized = true;
             }
             const isMouseOverSidebar =
@@ -36,12 +38,12 @@
 
             if (isMouseOverSidebar || eventParent.clientX <= hideThreshold) {
                 // Show sidebar
-                sidebar.style.transition = "flex .5s ease-out 0s";
-                sidebar.style.flex = "0 0 20%";
+                sidebar.style.maxWidth = "21%"; // Set max-width to its original value
+                sidebar.style.minWidth = "21%"; // Ensure min-width to maintain space
             } else {
                 // Hide sidebar
-                sidebar.style.transition = "flex .5s ease-out 0s";
-                sidebar.style.flex = "0 0 0%";
+                sidebar.style.maxWidth = "0"; // Collapse max-width to zero
+                sidebar.style.minWidth = "0"; // Ensure min-width to collapse space
             }
         }
     }
