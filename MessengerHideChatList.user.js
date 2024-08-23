@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name        Messenger Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     2.0
+// @version     2.1
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
 // @match       https://www.messenger.com/*
-// @description Hide Messenger Web chat list
+// @description Hide or show the Messenger chat list based on user interaction. Includes features for resizing and locking Chat list visibility.
 // @downloadURL https://update.greasyfork.org/scripts/503623/Messenger%20Hide%20Chat%20List.user.js
 // @updateURL   https://update.greasyfork.org/scripts/503623/Messenger%20Hide%20Chat%20List.meta.js
 // ==/UserScript==
@@ -26,7 +26,8 @@
     // active states:
     // 0 - Normal behavior: sidebar hidden on hover
     // 1 - Always visible
-    // 2 - Always hidden
+    // 2 - Always hidden(lock)
+    // 3 - Always hidden(hiddent but not locked)
     let lockPosition = JSON.parse(getSessionStorageItem("lockPosition")) || {
         x: 0,
         y: 0,
@@ -114,7 +115,7 @@
                 sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
                 sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
                 sidebar.style.margin = "0";
-            } else if (active === 2) {
+            } else if (active === 2 || active === 3) {
                 // Always hide the sidebar
                 sidebar.style.maxWidth = "0";
                 sidebar.style.minWidth = "0";
@@ -193,7 +194,15 @@
 
     // Helper function to show notifications
     function showNotification(message, time = 5000) {
+        // if previous notification found, remove it
+        const previousNotification =
+            document.querySelector("div[role='alert']");
+        if (previousNotification) {
+            document.body.removeChild(previousNotification);
+        }
+
         const notification = document.createElement("div");
+        notification.setAttribute("role", "alert");
         notification.textContent = message;
         notification.style.position = "fixed";
         notification.style.top = "50%";
@@ -219,14 +228,15 @@
         setTimeout(() => {
             notification.style.opacity = "0";
             setTimeout(() => {
-                document.body.removeChild(notification);
+                if (document.body.contains(notification))
+                    document.body.removeChild(notification);
             }, 500);
         }, time);
     }
 
     // Triple click event listener
-    function handleTripleClick(event) {
-        if (event.detail === 3) {
+    function handleClick(event, clickcount = 0) {
+        if (event.detail === 3 || clickcount === 3) {
             const inboxSwitcher = document.querySelector(
                 'div[aria-label="Inbox switcher"]'
             );
@@ -235,32 +245,48 @@
                     active = 1;
                     showNotification("Now chat list is always visible.", 3000);
                 } else {
-                    active = 2;
-                    lockPosition = { x: event.clientX, y: event.clientY };
-                    setSessionStorageItem(
-                        "lockPosition",
-                        JSON.stringify(lockPosition)
-                    );
-                    showNotification(
-                        "You have to triple click exactly here to unlock the chat list."
-                    );
+                    // if triple right click then lock hidden
+                    if (event.button === 2) {
+                        active = 2;
+                        lockPosition = { x: event.clientX, y: event.clientY };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition)
+                        );
+                        showNotification(
+                            "You have to triple click exactly here to unlock the chat list."
+                        );
+                    } else {
+                        // else or if triple left click then unlocked hidden
+                        active = 3;
+                        showNotification(
+                            "Now chat list is always hidden, but not locked."
+                        );
+                    }
                 }
             } else if (active === 1) {
                 if (isMouseOver(inboxSwitcher)) {
                     active = 0;
                     showNotification("Now chat list is shown on hover.", 3000);
                 } else {
-                    active = 2;
-                    lockPosition = { x: event.clientX, y: event.clientY };
-                    setSessionStorageItem(
-                        "lockPosition",
-                        JSON.stringify(lockPosition)
-                    );
-                    showNotification(
-                        "You have to triple click exactly here to unlock the chat list."
-                    );
+                    if (event.button === 2) {
+                        active = 2;
+                        lockPosition = { x: event.clientX, y: event.clientY };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition)
+                        );
+                        showNotification(
+                            "You have to triple click exactly here to unlock the chat list."
+                        );
+                    } else {
+                        active = 3;
+                        showNotification(
+                            "Now chat list is always hidden, but not locked."
+                        );
+                    }
                 }
-            } else {
+            } else if (active === 2) {
                 if (
                     isNearLockPosition(
                         event.clientX,
@@ -298,6 +324,29 @@
                         );
                     }
                 }
+            } else {
+                if (isMouseOver(inboxSwitcher)) {
+                    active = 1;
+                    showNotification("Now chat list is always visible.", 3000);
+                } else {
+                    if (event.button === 2) {
+                        active = 2;
+                        lockPosition = { x: event.clientX, y: event.clientY };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition)
+                        );
+                        showNotification(
+                            "You have to triple click exactly here to unlock the chat list."
+                        );
+                    } else {
+                        active = 0;
+                        showNotification(
+                            "Now chat list is shown on hover.",
+                            3000
+                        );
+                    }
+                }
             }
             setSessionStorageItem("active", active);
         }
@@ -310,7 +359,46 @@
             updateSidebarVisibility();
         });
 
-        document.addEventListener("click", handleTripleClick);
+        document.addEventListener("click", handleClick);
+
+        let lastRightClickTime = 0;
+        let rightClickCount = 0;
+
+        document.addEventListener("contextmenu", function (event) {
+            const avoidElements = [
+                "IMG",
+                "VIDEO",
+                "AUDIO",
+                "SOURCE",
+                "A",
+                "BUTTON",
+                "INPUT",
+                "SELECT",
+                "TEXTAREA",
+                "IFRAME",
+                "EMBED",
+                "OBJECT",
+                "CANVAS",
+                "SVG",
+            ];
+            if (
+                avoidElements.includes(event.target.tagName) ||
+                event.target.isContentEditable
+            ) {
+                return;
+            }
+            event.preventDefault();
+
+            const currentTime = new Date().getTime();
+            if (currentTime - lastRightClickTime < 500) {
+                rightClickCount++;
+            } else {
+                rightClickCount = 1;
+            }
+            lastRightClickTime = currentTime;
+
+            handleClick(event, rightClickCount);
+        });
     }
 
     init();
