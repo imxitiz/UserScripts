@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Messenger Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     2.1
+// @version     2.1.1
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -35,6 +35,9 @@
     const clickThreshold = 80; // Threshold in pixels for precise unlocking
     let wrongLockedPlaceAttempt = 0;
 
+    const sidebarElementSelector = "div[aria-label='Thread list']";
+    const inboxSwitcherElementSelector = "div[aria-label='Inbox switcher']";
+
     // Helper functions for storage
     function setSessionStorageItem(key, value) {
         sessionStorage.setItem(key, value);
@@ -55,9 +58,7 @@
     // Create and append the resize handle to the sidebar
     function createResizeHandle() {
         try {
-            const sidebar = document.querySelector(
-                'div[aria-label="Thread list"]'
-            );
+            const sidebar = document.querySelector(sidebarElementSelector);
             if (!sidebar) {
                 throw new Error("Sidebar element not found");
             }
@@ -91,11 +92,22 @@
         }
     }
 
+    function changeVisibility(sidebar, show) {
+        if (show) {
+            sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
+            sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
+            sidebar.style.margin = "0";
+        } else {
+            sidebar.style.maxWidth = "0";
+            sidebar.style.minWidth = "0";
+        }
+    }
+
     // Update sidebar visibility based on user interactions and settings
     function updateSidebarVisibility() {
-        const sidebar = document.querySelector('div[aria-label="Thread list"]');
+        const sidebar = document.querySelector(sidebarElementSelector);
         const inboxSwitcher = document.querySelector(
-            'div[aria-label="Inbox switcher"]'
+            inboxSwitcherElementSelector
         );
 
         if (sidebar && inboxSwitcher) {
@@ -112,13 +124,10 @@
 
             if (active === 1) {
                 // Always show the sidebar
-                sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
-                sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
-                sidebar.style.margin = "0";
+                changeVisibility(sidebar, true);
             } else if (active === 2 || active === 3) {
                 // Always hide the sidebar
-                sidebar.style.maxWidth = "0";
-                sidebar.style.minWidth = "0";
+                changeVisibility(sidebar, false);
             } else {
                 // Normal behavior
                 if (
@@ -127,13 +136,10 @@
                     isResizing
                 ) {
                     // Show sidebar
-                    sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
-                    sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
-                    sidebar.style.margin = "0";
+                    changeVisibility(sidebar, true);
                 } else {
                     // Hide sidebar
-                    sidebar.style.maxWidth = "0";
-                    sidebar.style.minWidth = "0";
+                    changeVisibility(sidebar, false);
                 }
             }
         }
@@ -142,9 +148,7 @@
     // Resize the chat list while the mouse is moving
     function resizeChatList(e) {
         if (isResizing) {
-            const sidebar = document.querySelector(
-                'div[aria-label="Thread list"]'
-            );
+            const sidebar = document.querySelector(sidebarElementSelector);
             const containerWidth = sidebar.parentElement.clientWidth;
             let newFlexBasis =
                 ((e.clientX - sidebar.getBoundingClientRect().left) /
@@ -195,14 +199,16 @@
     // Helper function to show notifications
     function showNotification(message, time = 5000) {
         // if previous notification found, remove it
-        const previousNotification =
-            document.querySelector("div[role='alert']");
+        const previousNotification = document.querySelector(
+            "div.notification[role='alert']"
+        );
         if (previousNotification) {
             document.body.removeChild(previousNotification);
         }
 
         const notification = document.createElement("div");
         notification.setAttribute("role", "alert");
+        notification.classList.add("notification");
         notification.textContent = message;
         notification.style.position = "fixed";
         notification.style.top = "50%";
@@ -238,7 +244,7 @@
     function handleClick(event, clickcount = 0) {
         if (event.detail === 3 || clickcount === 3) {
             const inboxSwitcher = document.querySelector(
-                'div[aria-label="Inbox switcher"]'
+                inboxSwitcherElementSelector
             );
             if (active === 0) {
                 if (isMouseOver(inboxSwitcher)) {
