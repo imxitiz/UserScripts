@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     0.1
+// @version     0.2
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -15,13 +15,12 @@
     "use strict";
 
     let hasInitialized = false;
-    const hideThreshold = 20;
+    const hideThreshold = 60;
     let eventParent;
 
     // Update chat list visibility
     function updateChatListVisibility() {
-        const chatList = document.querySelector("div._aigv:nth-child(3)");
-        const headerElement = document.querySelector(".x1pl83jw");
+        const chatList = document.querySelector("div._aigv:nth-child(4)");
 
         if (chatList) {
             if (!hasInitialized) {
@@ -31,8 +30,8 @@
                 chatList.style.width = "0%";
                 chatList.style.transition = "width .5s ease-out 0s";
 
-                headerElement.style.paddingLeft = "0px";
-                headerElement.style.transition = "all .5s ease-out 0s";
+                // headerElement.style.paddingLeft = '0px';
+                // headerElement.style.transition = 'all .5s ease-out 0s';
 
                 hasInitialized = true;
             }
@@ -41,11 +40,11 @@
             if (isMouseOverElement || eventParent.clientX <= hideThreshold) {
                 // Show
                 chatList.style.width = "100%";
-                headerElement.style.paddingLeft = "16px";
+                // headerElement.style.paddingLeft = '16px';
             } else {
                 // Hide
                 chatList.style.width = "0%";
-                headerElement.style.paddingLeft = "0px";
+                // headerElement.style.paddingLeft = '0px';
             }
         }
     }
