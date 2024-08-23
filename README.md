@@ -2,6 +2,11 @@
 
 User scripts to enhance the browsing experience.
 
+## Scripts
+
+- [Facebook Messenger Hide Chat List](MessengerHideChatList.user.js): Hides the chat List on Facebook Messenger to give more space and privacy.
+- [WhatsApp Web Hide Chat List](WhatsAppWebHideChatList.user.js): Hides the chat List on WhatsApp Web to give more space and privacy.
+
 ## How to Use
 
 - Install a UserScript Manager: To use these scripts, you'll need a UserScript manager extension installed in your browser. Common choices include Violentmonkey or Greasemonkey or Tampermonkey.
