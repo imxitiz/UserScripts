@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Messenger Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     2.1.1
+// @version     2.1.2
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -93,13 +93,32 @@
     }
 
     function changeVisibility(sidebar, show) {
+        sidebar.style.margin = "0";
         if (show) {
             sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
             sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
-            sidebar.style.margin = "0";
         } else {
             sidebar.style.maxWidth = "0";
             sidebar.style.minWidth = "0";
+        }
+    }
+
+    function initialize() {
+        const sidebar = document.querySelector(sidebarElementSelector);
+        if (sidebar) {
+            if (!hasInitialized) {
+                if (active != 1 && sidebar.style.maxWidth != "0px") {
+                    changeVisibility(sidebar, active === 1);
+                    setTimeout(initialize, 1000);
+                }
+                if (sidebar.style.maxWidth == "0px") {
+                    setTimeout(() => {
+                        changeVisibility(sidebar, active === 1);
+                    }, 2000);
+                }
+            }
+        } else {
+            setTimeout(initialize, 1000);
         }
     }
 
@@ -209,7 +228,7 @@
         const notification = document.createElement("div");
         notification.setAttribute("role", "alert");
         notification.classList.add("notification");
-        notification.textContent = message;
+        notification.innerHTML = message;
         notification.style.position = "fixed";
         notification.style.top = "50%";
         notification.style.left = "50%";
@@ -240,6 +259,31 @@
         }, time);
     }
 
+    function changeActiveState(newactivestate, message = null, time = 3000) {
+        active = newactivestate;
+        setSessionStorageItem("active", active);
+        if (message === null) {
+            message = notificationBasedOnActiveState(active);
+        }
+        if (message) {
+            showNotification(message, time);
+        }
+    }
+
+    function notificationBasedOnActiveState(activeState) {
+        if (activeState == 0) {
+            return "Now chat list is shown on hover.";
+        } else if (activeState == 1) {
+            return "Now chat list is always visible.";
+        } else if (activeState == 2) {
+            return "Now chat list is always hidden, but locked.";
+        } else if (activeState == 3) {
+            return "Now chat list is always hidden, but not locked.";
+        } else {
+            return null;
+        }
+    }
+
     // Triple click event listener
     function handleClick(event, clickcount = 0) {
         if (event.detail === 3 || clickcount === 3) {
@@ -248,8 +292,7 @@
             );
             if (active === 0) {
                 if (isMouseOver(inboxSwitcher)) {
-                    active = 1;
-                    showNotification("Now chat list is always visible.", 3000);
+                    changeActiveState(1);
                 } else {
                     // if triple right click then lock hidden
                     if (event.button === 2) {
@@ -264,16 +307,12 @@
                         );
                     } else {
                         // else or if triple left click then unlocked hidden
-                        active = 3;
-                        showNotification(
-                            "Now chat list is always hidden, but not locked."
-                        );
+                        changeActiveState(3);
                     }
                 }
             } else if (active === 1) {
                 if (isMouseOver(inboxSwitcher)) {
-                    active = 0;
-                    showNotification("Now chat list is shown on hover.", 3000);
+                    changeActiveState(0);
                 } else {
                     if (event.button === 2) {
                         active = 2;
@@ -286,13 +325,14 @@
                             "You have to triple click exactly here to unlock the chat list."
                         );
                     } else {
-                        active = 3;
-                        showNotification(
-                            "Now chat list is always hidden, but not locked."
-                        );
+                        changeActiveState(3);
                     }
                 }
             } else if (active === 2) {
+                if (wrongLockedPlaceAttempt > 16) {
+                    // no ned to check anything, just leave
+                    return;
+                }
                 if (
                     isNearLockPosition(
                         event.clientX,
@@ -300,12 +340,21 @@
                         lockPosition
                     )
                 ) {
-                    active = 0;
-                    wrongLockedPlaceAttempt = 0;
-                    showNotification("Chat list unlocked successfully.");
+                    // only right triple click can open the lock
+                    if (event.button === 2) {
+                        wrongLockedPlaceAttempt = 0;
+                        changeActiveState(0);
+                    }
                 } else {
-                    wrongLockedPlaceAttempt++;
-                    if (wrongLockedPlaceAttempt >= 10) {
+                    if (wrongLockedPlaceAttempt <= 16) {
+                        wrongLockedPlaceAttempt++;
+                    }
+                    if (wrongLockedPlaceAttempt >= 15) {
+                        console.log("You're banned!");
+                        showNotification(
+                            "You're banned! Please refresh the page to start again. <br>OR<br> You can always logout and login again to reset the lock position."
+                        );
+                    } else if (wrongLockedPlaceAttempt >= 10) {
                         showNotification(
                             "You can always logout and login again to reset the lock position."
                         );
@@ -332,8 +381,7 @@
                 }
             } else {
                 if (isMouseOver(inboxSwitcher)) {
-                    active = 1;
-                    showNotification("Now chat list is always visible.", 3000);
+                    changeActiveState(1);
                 } else {
                     if (event.button === 2) {
                         active = 2;
@@ -346,20 +394,22 @@
                             "You have to triple click exactly here to unlock the chat list."
                         );
                     } else {
-                        active = 0;
-                        showNotification(
-                            "Now chat list is shown on hover.",
-                            3000
-                        );
+                        changeActiveState(0);
                     }
                 }
             }
+            // Immediately reflect the change
+            changeVisibility(
+                document.querySelector(sidebarElementSelector),
+                active === 1
+            );
             setSessionStorageItem("active", active);
         }
     }
 
     // Initialize the script
     function init() {
+        initialize();
         document.addEventListener("mousemove", function (event) {
             eventParent = event;
             updateSidebarVisibility();
