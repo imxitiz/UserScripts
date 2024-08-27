@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     2.0
+// @version     3.0
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -27,6 +27,7 @@
     // 1 - Always visible
     // 2 - Always hidden(lock)
     // 3 - Always hidden(hiddent but not locked)
+    let blurEffect = getSessionStorageItem("blurEffect") === "true" || false;
     let lockPosition = JSON.parse(getSessionStorageItem("lockPosition")) || {
         x: 0,
         y: 0,
@@ -110,6 +111,7 @@
             if (!hasInitialized) {
                 if (active != 1 && sidebar.style.maxWidth != "0px") {
                     changeVisibility(sidebar, active === 1);
+                    createBlurEffect(blurEffect);
                     setTimeout(initialize, 1000);
                 }
                 if (sidebar.style.maxWidth == "0px") {
@@ -275,6 +277,150 @@
         }
     }
 
+    function changeBlurEffectState(newBlurEffectState) {
+        blurEffect = newBlurEffectState;
+        setSessionStorageItem("blurEffect", blurEffect);
+    }
+
+    function createToolBar() {
+        const customToolbar = document.createElement("div");
+        customToolbar.id = "customToolbar";
+        document.body.appendChild(customToolbar);
+
+        const overlay = document.createElement("div");
+        overlay.id = "overlay";
+        document.body.appendChild(overlay);
+
+        const overlayButton = document.createElement("button");
+        overlayButton.id = "overlayButton";
+        overlayButton.classList.add("eye");
+        if (blurEffect) {
+            overlayButton.innerHTML = "🙈";
+        } else {
+            overlayButton.innerHTML = "🐵";
+        }
+        overlayButton.addEventListener("click", function () {
+            const overlayButton = document.getElementById("overlayButton");
+            if (blurEffect) {
+                overlayButton.innerHTML = "🐵";
+                createBlurEffect(false);
+            } else {
+                overlayButton.innerHTML = "🙈";
+                createBlurEffect(true);
+            }
+        });
+        customToolbar.appendChild(overlayButton);
+
+        const githubLink = document.createElement("a");
+        githubLink.id = "githubLink";
+        githubLink.href = "https://github.com/imxitiz";
+        githubLink.innerHTML = "imxitiz";
+        customToolbar.appendChild(githubLink);
+    }
+
+    function changeVisibilityOfToolbar(show = true) {
+        const customToolbar = document.getElementById("customToolbar");
+        if (show) {
+            customToolbar.style.right = "0";
+        } else {
+            customToolbar.style.right = "-200px";
+        }
+    }
+
+    function updateToolBarVisibility() {
+        // if hovering in right side
+        if (
+            eventParent.clientX >= window.innerWidth - hideThreshold ||
+            isMouseOver(document.getElementById("customToolbar"))
+        ) {
+            changeVisibilityOfToolbar(true);
+        } else {
+            changeVisibilityOfToolbar(false);
+        }
+    }
+
+    createToolBar();
+    function createBlurEffect(show = false) {
+        let blurEffectElement = document.getElementById("blur-effect");
+
+        changeBlurEffectState(show);
+
+        if (!blurEffectElement) {
+            // Create the blur effect element only once
+            blurEffectElement = document.createElement("div");
+            blurEffectElement.id = "blur-effect";
+            blurEffectElement.style.position = "fixed";
+            blurEffectElement.style.top = "0";
+            blurEffectElement.style.left = "0";
+            blurEffectElement.style.width = "100%";
+            blurEffectElement.style.height = "100%";
+            blurEffectElement.style.backgroundColor = "rgba(0, 0, 0, 0)";
+            blurEffectElement.style.zIndex = "100000";
+            blurEffectElement.style.backdropFilter = "blur(0px)";
+            blurEffectElement.style.transition =
+                "background-color 0.5s ease, backdrop-filter 0.5s ease";
+            blurEffectElement.style.display = "none"; // Initially hidden
+
+            function preventDefaultAndStopPropagation(event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            // Add common event listeners
+            blurEffectElement.addEventListener(
+                "click",
+                preventDefaultAndStopPropagation
+            );
+            blurEffectElement.addEventListener(
+                "contextmenu",
+                preventDefaultAndStopPropagation
+            );
+            blurEffectElement.addEventListener(
+                "mousedown",
+                preventDefaultAndStopPropagation
+            );
+            blurEffectElement.addEventListener("mousemove", function (event) {
+                if (event.clientX >= window.innerWidth - hideThreshold) {
+                    changeVisibilityOfToolbar(true);
+                } else {
+                    changeVisibilityOfToolbar(false);
+                }
+                preventDefaultAndStopPropagation(event);
+            });
+            document.body.appendChild(blurEffectElement);
+        }
+
+        // Toggle the visibility of the blur effect
+        if (show) {
+            blurEffectElement.style.display = "block";
+            setTimeout(() => {
+                blurEffectElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+                blurEffectElement.style.backdropFilter = "blur(10px)";
+            }, 10); // Slight delay to trigger transition
+            activateShortcutBlocker();
+        } else {
+            blurEffectElement.style.backgroundColor = "rgba(0, 0, 0, 0)";
+            blurEffectElement.style.backdropFilter = "blur(0px)";
+            setTimeout(() => {
+                blurEffectElement.style.display = "none";
+            }, 500); // Hide element after transition completes
+            deactivateShortcutBlocker();
+        }
+    }
+
+    function blockKeyboardShortcuts(event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    function activateShortcutBlocker() {
+        document.addEventListener("keydown", blockKeyboardShortcuts, true);
+    }
+
+    function deactivateShortcutBlocker() {
+        document.removeEventListener("keydown", blockKeyboardShortcuts, true);
+    }
+
     function notificationBasedOnActiveState(activeState) {
         if (activeState == 0) {
             return "Now chat list is shown on hover.";
@@ -355,7 +501,6 @@
                         wrongLockedPlaceAttempt++;
                     }
                     if (wrongLockedPlaceAttempt >= 15) {
-                        console.log("You're banned!");
                         showNotification(
                             "You're banned! Please refresh the page to start again. <br>OR<br> You can always logout and login again to reset the lock position."
                         );
@@ -384,7 +529,7 @@
                         );
                     }
                 }
-            } else {
+            } else if (active === 3) {
                 if (isMouseOver(inboxSwitcher)) {
                     changeActiveState(1);
                 } else {
@@ -418,6 +563,7 @@
         document.addEventListener("mousemove", function (event) {
             eventParent = event;
             updateSidebarVisibility();
+            updateToolBarVisibility();
         });
 
         document.addEventListener("click", handleClick);
@@ -447,7 +593,9 @@
             ];
             if (
                 avoidElements.includes(event.target.tagName) ||
-                event.target.isContentEditable
+                event.target.isContentEditable ||
+                event.target.getAttribute("role") === "textbox" ||
+                window.getSelection().toString().trim().length > 0
             ) {
                 return;
             }
@@ -464,6 +612,72 @@
             handleClick(event, rightClickCount);
         });
     }
+
+    // Add styles
+    let styles = `
+        #customToolbar {
+            position: fixed;
+            top: 48%;
+            right: -200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(
+                            45deg, 
+                            rgba(255, 69, 0, 0.8), /* Red-Orange */
+                            rgba(255, 140, 0, 0.8), /* Orange */
+                            rgba(255, 215, 0, 0.8)  /* Yellow */
+                        );
+            z-index: 1000000;
+            padding: 5px;
+            border-radius: 10px;
+            transition: right 0.5s ease;
+        }
+        
+        
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            z-index: 99999;
+        }
+            
+        #overlayButton {
+            background-color: #333;
+            color: #fff;
+            border: none;
+            padding: 8px;
+            margin: 5px 10px;
+            cursor: pointer;
+            border-radius: 10px;
+            font-size: 2.5rem;
+        }
+        
+        #overlayButton:hover {
+            background-color: #555;
+            filter: drop-shadow(0 0 5px #fff);
+        }
+            
+        #githubLink {
+            color: #285ed0;
+            text-decoration: none;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+            
+        #githubLink:hover {
+            text-decoration: underline;
+        }
+    `;
+
+    let styleElement = document.createElement("style");
+    styleElement.textContent = styles;
+    document.head.appendChild(styleElement);
 
     init();
 })();
