@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     3.0
+// @version     3.0.1
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
 // @match       https://web.whatsapp.com/
-// @description Hide WhatsApp Web chat list
+// @description Hide or show the WhatsApp Web chat list based on user interaction. Includes features for resizing and locking Chat list visibility.
 // @downloadURL https://update.greasyfork.org/scripts/491894/WhatsApp%20Hide%20Chat%20List.user.js
 // @updateURL   https://update.greasyfork.org/scripts/491894/WhatsApp%20Hide%20Chat%20List.user.js
 // ==/UserScript==
@@ -109,7 +109,7 @@
         const sidebar = document.querySelector(sidebarElementSelector);
         if (sidebar) {
             if (!hasInitialized) {
-                if (active != 1 && sidebar.style.maxWidth != "0px") {
+                if (sidebar.style.maxWidth != "0px") {
                     changeVisibility(sidebar, active === 1);
                     createBlurEffect(blurEffect);
                     setTimeout(initialize, 1000);
@@ -117,6 +117,7 @@
                 if (sidebar.style.maxWidth == "0px") {
                     setTimeout(() => {
                         changeVisibility(sidebar, active === 1);
+                        createBlurEffect(blurEffect);
                     }, 2000);
                 }
             }
