@@ -5,6 +5,7 @@
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
+// @contributor imxitiz
 // @match       https://www.messenger.com/*
 // @description Hide or show the Messenger chat list based on user interaction. Includes features for resizing and locking Chat list visibility.
 // @downloadURL https://update.greasyfork.org/scripts/503623/Messenger%20Hide%20Chat%20List.user.js
