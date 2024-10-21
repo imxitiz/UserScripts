@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     3.0.1
+// @version     3.0.2
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
