@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name        Grok Chat Workspace Icon Sync
 // @namespace   imxitiz's-Script
-// @version     1.0
+// @version     1.5
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
 // @contributor imxitiz
-// @match       https://grok.com/chat/*
+// @match       https://grok.com/*
 // @description Automatically syncs and displays workspace icons next to chat history items on Grok Chat. Includes features for mapping, storing, and visually enhancing chat navigation with workspace icons.
 // ==/UserScript==
 
@@ -32,24 +32,48 @@
     }
   }
 
+  function createIconElement(iconHTML) {
+    const icon = document.createElement('span');
+    icon.className = 'icon-added';
+    icon.innerHTML = iconHTML;
+    icon.style.display = 'inline-block';
+    icon.style.marginRight = '5px';
+    icon.style.verticalAlign = 'middle';
+    return icon;
+  }
+
   // Function to apply icons to chat items
   function applyIcons() {
     if (iconMapChanged) {
       iconMap = JSON.parse(localStorage.getItem('chatIcons') || '{}');
       iconMapChanged = false; // Reset immediately after use
     }
+
     const chatItems = document.querySelectorAll('a[href^="/chat/"]');
     chatItems.forEach(chat => {
       const chatId = chat.getAttribute('href').split('/')[2];
+
+      if (!iconMap[chatId]) return;
+
+      const iconAlreadyThere = chat.querySelector('.icon-added');
+      if (iconAlreadyThere) return;
+
       const chatTextSpan = chat.querySelector('span');
-      if (chatTextSpan && chatTextSpan.parentNode && iconMap[chatId] && !chatTextSpan.querySelector('.icon-added')) {
-        const iconElement = document.createElement('span');
-        iconElement.className = 'icon-added';
-        iconElement.innerHTML = iconMap[chatId];
-        iconElement.style.display = 'inline-block';
-        iconElement.style.marginRight = '5px';
-        iconElement.style.verticalAlign = 'middle';
+
+      const iconElement = createIconElement(iconMap[chatId]);
+
+      if (chatTextSpan) {
         chatTextSpan.insertBefore(iconElement, chatTextSpan.firstChild);
+      } else {
+        const siblingDiv = chat.nextElementSibling;
+        if (!siblingDiv) return;
+
+        // Find the target span insertion point
+        const target = siblingDiv.querySelector('.flex.items-center');
+        if (!target || target.querySelector('.icon-added')) return;
+
+        const iconElement = createIconElement(iconMap[chatId]);
+        target.insertBefore(iconElement, target.firstChild);
       }
     });
   }
