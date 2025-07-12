@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Grok Chat Workspace Icon Sync
 // @namespace   imxitiz's-Script
-// @version     1.5
+// @version     1.5.1
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
