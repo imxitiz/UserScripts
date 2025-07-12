@@ -8,6 +8,8 @@
 // @contributor imxitiz
 // @match       https://grok.com/*
 // @description Automatically syncs and displays workspace icons next to chat history items on Grok Chat. Includes features for mapping, storing, and visually enhancing chat navigation with workspace icons.
+// @downloadURL https://update.greasyfork.org/scripts/542377/Grok%20Chat%20Workspace%20Icon%20Sync.user.js
+// @updateURL   https://update.greasyfork.org/scripts/542377/Grok%20Chat%20Workspace%20Icon%20Sync.meta.js
 // ==/UserScript==
 
 (function () {
