@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Grok Chat Workspace Icon Sync
 // @namespace   imxitiz's-Script
-// @version     1.5.2
+// @version     1.5.3
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -23,9 +23,10 @@
   function updateIconMap() {
     const workspaceLink = document.querySelector('main a[href^="/project/"]');
     if (workspaceLink) {
-      const chatId = location.pathname.split('/')[2];
+      const splits = location.href.split("/");
+      const chatId = splits[3] === "chat"? splits[4] : splits[3] === "project"? new URLSearchParams(location.search).get("chat"): null;
       const iconSvg = workspaceLink.querySelector('svg');
-      if (iconSvg && !iconMap[chatId]) {
+      if (chatId && iconSvg && !iconMap[chatId]) {
         const iconHtml = iconSvg.outerHTML;
         iconMap[chatId] = iconHtml;
         localStorage.setItem('chatIcons', JSON.stringify(iconMap));
