@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Grok Chat Workspace Icon Sync
 // @namespace   imxitiz's-Script
-// @version     1.5.3
+// @version     1.5.4
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -12,11 +12,9 @@
 // @updateURL   https://update.greasyfork.org/scripts/542377/Grok%20Chat%20Workspace%20Icon%20Sync.meta.js
 // ==/UserScript==
 
-(function () {
-  'use strict';
-
+(() => {
   // Initialize or load icon map from localStorage
-  let iconMap = JSON.parse(localStorage.getItem('chatIcons') || '{}');
+  let iconMap = JSON.parse(localStorage.getItem("chatIcons") || "{}");
   let iconMapChanged = false;
 
   // Function to update icon map with new workspace icons
@@ -29,39 +27,39 @@
       if (chatId && iconSvg && !iconMap[chatId]) {
         const iconHtml = iconSvg.outerHTML;
         iconMap[chatId] = iconHtml;
-        localStorage.setItem('chatIcons', JSON.stringify(iconMap));
+        localStorage.setItem("chatIcons", JSON.stringify(iconMap));
         iconMapChanged = true;
       }
     }
   }
 
   function createIconElement(iconHTML) {
-    const icon = document.createElement('span');
-    icon.className = 'icon-added';
+    const icon = document.createElement("span");
+    icon.className = "icon-added";
     icon.innerHTML = iconHTML;
-    icon.style.display = 'inline-block';
-    icon.style.marginRight = '5px';
-    icon.style.verticalAlign = 'middle';
+    icon.style.display = "inline-block";
+    icon.style.marginRight = "5px";
+    icon.style.verticalAlign = "middle";
     return icon;
   }
 
   // Function to apply icons to chat items
   function applyIcons() {
     if (iconMapChanged) {
-      iconMap = JSON.parse(localStorage.getItem('chatIcons') || '{}');
+      iconMap = JSON.parse(localStorage.getItem("chatIcons") || "{}");
       iconMapChanged = false; // Reset immediately after use
     }
 
     const chatItems = document.querySelectorAll('a[href^="/chat/"]');
-    chatItems.forEach(chat => {
-      const chatId = chat.getAttribute('href').split('/')[2];
+    chatItems.forEach((chat) => {
+      const chatId = chat.getAttribute("href").split("/")[2];
 
       if (!iconMap[chatId]) return;
 
-      const iconAlreadyThere = chat.querySelector('.icon-added');
+      const iconAlreadyThere = chat.querySelector(".icon-added");
       if (iconAlreadyThere) return;
 
-      const chatTextSpan = chat.querySelector('span');
+      const chatTextSpan = chat.querySelector("span");
 
       const iconElement = createIconElement(iconMap[chatId]);
 
@@ -72,8 +70,8 @@
         if (!siblingDiv) return;
 
         // Find the target span insertion point
-        const target = siblingDiv.querySelector('.flex.items-center');
-        if (!target || target.querySelector('.icon-added')) return;
+        const target = siblingDiv.querySelector(".flex.items-center");
+        if (!target || target.querySelector(".icon-added")) return;
 
         const iconElement = createIconElement(iconMap[chatId]);
         target.insertBefore(iconElement, target.firstChild);
@@ -88,12 +86,12 @@
   }
 
   // Run after full page load with a delay for DOM stability
-  window.onload = function () {
+  window.onload = () => {
     setTimeout(syncIcons, 3000); // 3000ms delay to ensure full render
   };
 
   // Handle URL changes with a delay for dynamic content
-  window.addEventListener('popstate', () => {
+  window.addEventListener("popstate", () => {
     setTimeout(syncIcons, 5000); // 5000ms delay to ensure DOM stability
   });
 
