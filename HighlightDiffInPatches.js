@@ -9,6 +9,8 @@
 // @author      imxitiz
 // @license     GNU GPLv3
 // @description Highlight additions, deletions, file changes, and line changes in diff/patch files for better visibility. Nov 06 2024, 11:00:34 PM 
+// @downloadURL https://update.greasyfork.org/scripts/555290/Highlight%20diff%20in%20patches.user.js
+// @updateURL   https://update.greasyfork.org/scripts/555290/Highlight%20diff%20in%20patches.meta.js
 // ==/UserScript==
 
 (() => {
