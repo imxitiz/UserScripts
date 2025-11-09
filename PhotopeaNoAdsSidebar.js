@@ -8,6 +8,8 @@
 // @match       https://www.photopea.com/*
 // @description Remove the gap of ads Sidebar
 // @run-at      document-idle
+// @downloadURL https://update.greasyfork.org/scripts/503627/Photopea%20No%20Ads%20Sidebar.user.js
+// @updateURL   https://update.greasyfork.org/scripts/503627/Photopea%20No%20Ads%20Sidebar.meta.js
 // ==/UserScript==
 
 function resize() {
