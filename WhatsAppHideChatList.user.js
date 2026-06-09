@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     3.0.3
+// @version     3.1.0
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -13,9 +13,79 @@
 // ==/UserScript==
 
 (() => {
-    ("use strict");
+    "use strict";
+
+    // ============================================================
+    // DEBUG SYSTEM — Toggle with localStorage.setItem('WHC_DEBUG','true')
+    // ============================================================
+    const DEBUG = localStorage.getItem("WHC_DEBUG") === "true";
+    const log = (...args) => DEBUG && console.log("[WHC]", ...args);
+    const warn = (...args) => DEBUG && console.warn("[WHC]", ...args);
+    const error = (...args) => console.error("[WHC]", ...args);
+    const group = (label) => DEBUG && console.groupCollapsed(`[WHC] ${label}`);
+    const groupEnd = () => DEBUG && console.groupEnd();
+
+    log("Script loaded. DEBUG mode:", DEBUG);
+    log("Tip: Set localStorage.setItem('WHC_DEBUG','true') and reload for detailed logs.");
+
+    // ============================================================
+    // SELECTOR STRATEGY — Multiple fallback strategies for resilience
+    // ============================================================
+    // WhatsApp changes class names frequently. We use a multi-strategy
+    // approach: try stable selectors first, fall back to structural ones.
+    //
+    // SIDEBAR: The container that holds BOTH the sidebar header AND
+    // the chat list (#side). Hiding this container hides everything.
+    //   1. div.two > div:has(> #side) — structural, most reliable
+    //   2. #side — the chat list itself (fallback, won't hide header)
+    //
+    // HEADER (inbox switcher): The top bar with WhatsApp logo
+    //   1. div.two > header — the direct child header of the main container
+    //   2. header — any header (fallback)
+    // ============================================================
+
+    const Selectors = {
+        sidebar: [
+            "div.two > div:has(> #side)",
+            "#side",
+        ],
+        header: [
+            "div.two > header",
+            "header",
+        ],
+    };
+
+    /**
+     * Try multiple selectors and return the first match.
+     * Logs which strategy succeeded for debugging.
+     */
+    function queryFirst(selectorList, label) {
+        for (let i = 0; i < selectorList.length; i++) {
+            const sel = selectorList[i];
+            try {
+                const el = document.querySelector(sel);
+                if (el) {
+                    if (i > 0) {
+                        warn(
+                            `Selector fallback #${i} for "${label}": "${sel}"`,
+                        );
+                    }
+                    log(`Found "${label}" with: "${sel}"`);
+                    return el;
+                }
+            } catch (e) {
+                warn(`Invalid selector "${sel}" for "${label}":`, e.message);
+            }
+        }
+        error(`No selector matched for "${label}" — tried:`, selectorList);
+        return null;
+    }
+
+    // ============================================================
+    // STATE
+    // ============================================================
     let hasInitialized = false;
-    const hideThreshold = 20; // Threshold in pixels to determine if sidebar should be hidden
+    const hideThreshold = 20;
     let eventParent;
     let isResizing = false;
     let userDefinedFlexBasis =
@@ -24,47 +94,45 @@
         getSessionStorageItem("userResizedOnce") === "true" || false;
     let active = parseInt(getSessionStorageItem("active"), 10) || 0;
     // active states:
-    // 0 - Normal behavior: sidebar hidden on hover
+    // 0 - Normal: sidebar shown on hover/edge, hidden otherwise
     // 1 - Always visible
-    // 2 - Always hidden(lock)
-    // 3 - Always hidden(hiddent but not locked)
-    let blurEffect = getSessionStorageItem("blurEffect") === "true" || false;
+    // 2 - Always hidden (locked — triple right-click to unlock)
+    // 3 - Always hidden (unlocked)
+    let blurEffect =
+        getSessionStorageItem("blurEffect") === "true" || false;
     let lockPosition = JSON.parse(getSessionStorageItem("lockPosition")) || {
         x: 0,
         y: 0,
     };
-    const clickThreshold = 80; // Threshold in pixels for precise unlocking
+    const clickThreshold = 80;
     let wrongLockedPlaceAttempt = 0;
 
-    const sidebarElementSelector = "div.two._aigs ._aigw:not(.false):has(#side)";
-    const inboxSwitcherElementSelector = "header";
-
-    // Helper functions for storage
+    // ============================================================
+    // STORAGE HELPERS
+    // ============================================================
     function setSessionStorageItem(key, value) {
         sessionStorage.setItem(key, value);
     }
-
     function getSessionStorageItem(key) {
         return sessionStorage.getItem(key);
     }
-
     function setLocalStorageItem(key, value) {
         localStorage.setItem(key, value);
     }
-
     function getLocalStorageItem(key) {
         return localStorage.getItem(key);
     }
 
-    // Create and append the resize handle to the sidebar
+    // ============================================================
+    // RESIZE HANDLE
+    // ============================================================
     function createResizeHandle() {
         try {
-            const sidebar = document.querySelector(sidebarElementSelector);
+            const sidebar = queryFirst(Selectors.sidebar, "sidebar");
             if (!sidebar) {
                 throw new Error("Sidebar element not found");
             }
 
-            // Create resize handle only if it doesn't already exist
             if (!document.getElementById("resize-handle")) {
                 const resizeHandle = document.createElement("div");
                 resizeHandle.id = "resize-handle";
@@ -80,36 +148,62 @@
                 resizeHandle.style.zIndex = "1000";
                 sidebar.appendChild(resizeHandle);
 
-                // Add event listeners for resizing
                 resizeHandle.addEventListener("mousedown", () => {
                     isResizing = true;
                     document.addEventListener("mousemove", resizeChatList);
                     document.addEventListener("mouseup", stopResize);
                 });
+                log("Resize handle created");
             }
-        } catch (error) {
-            console.error("Error creating resize handle: ", error);
-            setTimeout(createResizeHandle, 1000); // Retry after 1 second if there's an error
+        } catch (err) {
+            error("Error creating resize handle:", err);
+            setTimeout(createResizeHandle, 1000);
         }
     }
 
+    // ============================================================
+    // VISIBILITY CONTROL
+    // ============================================================
+    /**
+     * Get the pixel width for the sidebar based on userDefinedFlexBasis (percentage).
+     * flex-basis percentages don't work reliably in all flex container contexts,
+     * so we compute pixel values from the parent's width.
+     */
+    function getSidebarPixelWidth(sidebar) {
+        const parentWidth = sidebar.parentElement
+            ? sidebar.parentElement.clientWidth
+            : window.innerWidth;
+        return Math.round(parentWidth * (userDefinedFlexBasis / 100));
+    }
+
     function changeVisibility(sidebar, show) {
+        if (!sidebar) return;
         if (show) {
-            sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
-            sidebar.style.minWidth = `${userDefinedFlexBasis}`;
-            sidebar.style.flex = `0 0 ${userDefinedFlexBasis}%`;
+            const px = getSidebarPixelWidth(sidebar);
+            sidebar.style.maxWidth = `${px}px`;
+            sidebar.style.minWidth = `${px}px`;
+            sidebar.style.flex = `0 0 ${px}px`;
+            sidebar.style.padding = "";
+            sidebar.style.width = "";
         } else {
             sidebar.style.width = "0";
             sidebar.style.maxWidth = "0";
             sidebar.style.minWidth = "0";
             sidebar.style.flex = "0 0 0";
+            sidebar.style.padding = "0";
         }
+        log("Visibility changed:", show ? "SHOW" : "HIDE");
     }
 
+    // ============================================================
+    // INITIALIZATION
+    // ============================================================
     function initialize() {
-        const sidebar = document.querySelector(sidebarElementSelector);
+        const sidebar = queryFirst(Selectors.sidebar, "sidebar");
+        group("initialize()");
         if (sidebar) {
             if (!hasInitialized) {
+                log("Sidebar found, applying initial state. active:", active);
                 if (sidebar.style.maxWidth !== "0px") {
                     changeVisibility(sidebar, active === 1);
                     createBlurEffect(blurEffect);
@@ -121,106 +215,142 @@
                         createBlurEffect(blurEffect);
                     }, 2000);
                 }
+            } else {
+                log("Already initialized, skipping.");
             }
         } else {
+            log("Sidebar not found, retrying in 1s...");
             setTimeout(initialize, 1000);
         }
+        groupEnd();
     }
 
-    // Update sidebar visibility based on user interactions and settings
+    // ============================================================
+    // SIDEBAR VISIBILITY UPDATE (mousemove handler)
+    // ============================================================
     function updateSidebarVisibility() {
-        const sidebar = document.querySelector(sidebarElementSelector);
-        const inboxSwitcher = document.querySelector(inboxSwitcherElementSelector);
+        const sidebar = queryFirst(Selectors.sidebar, "sidebar");
+        const inboxSwitcher = queryFirst(Selectors.header, "header");
+
         if (sidebar && inboxSwitcher) {
             if (!hasInitialized) {
+                log("First-time setup: applying base styles to sidebar");
+                const px = getSidebarPixelWidth(sidebar);
                 sidebar.style.display = "flex";
-                sidebar.style.flex = `0 0 ${userDefinedFlexBasis}%`;
+                sidebar.style.flex = `0 0 ${px}px`;
                 sidebar.style.maxWidth = "100%";
                 sidebar.style.width = "0%";
                 sidebar.style.transition = "width .5s ease-out";
                 sidebar.style.position = "relative";
                 sidebar.style.overflow = "hidden";
                 hasInitialized = true;
-
-                createResizeHandle(); // Create resize handle on initial setup
+                createResizeHandle();
             }
+
             const isMouseOverSidebar =
                 isMouseOver(sidebar) || isMouseOver(inboxSwitcher);
 
+            group("updateSidebarVisibility()");
+            log(
+                "active:",
+                active,
+                "| isMouseOverSidebar:",
+                isMouseOverSidebar,
+                "| isResizing:",
+                isResizing,
+                "| mouseX:",
+                eventParent.clientX,
+            );
+
             if (active === 1) {
-                // Always show the sidebar
                 changeVisibility(sidebar, true);
             } else if (active === 2 || active === 3) {
-                // Always hide the sidebar
                 changeVisibility(sidebar, false);
             } else {
-                // Normal behavior
+                // Normal behavior (active === 0)
                 if (
                     isMouseOverSidebar ||
                     eventParent.clientX <= hideThreshold ||
                     isResizing
                 ) {
-                    // Show sidebar
                     changeVisibility(sidebar, true);
                 } else {
-                    // Hide sidebar
                     changeVisibility(sidebar, false);
                 }
             }
+            groupEnd();
+        } else {
+            warn(
+                "Missing elements — sidebar:",
+                !!sidebar,
+                "header:",
+                !!inboxSwitcher,
+            );
         }
     }
 
-    // Resize the chat list while the mouse is moving
+    // ============================================================
+    // RESIZE LOGIC
+    // ============================================================
     function resizeChatList(e) {
         if (isResizing) {
-            const sidebar = document.querySelector(sidebarElementSelector);
+            const sidebar = queryFirst(Selectors.sidebar, "sidebar");
+            if (!sidebar) return;
             const containerWidth = sidebar.parentElement.clientWidth;
             const newFlexBasis =
-                ((e.clientX - sidebar.getBoundingClientRect().left) / containerWidth) *
+                ((e.clientX - sidebar.getBoundingClientRect().left) /
+                    containerWidth) *
                 100;
 
             if (newFlexBasis >= 10 && newFlexBasis <= 100) {
                 userDefinedFlexBasis = newFlexBasis;
-                sidebar.style.maxWidth = `${userDefinedFlexBasis}%`;
-                sidebar.style.minWidth = `${userDefinedFlexBasis}%`;
+                const px = getSidebarPixelWidth(sidebar);
+                sidebar.style.maxWidth = `${px}px`;
+                sidebar.style.minWidth = `${px}px`;
+                sidebar.style.flex = `0 0 ${px}px`;
             }
 
             if (!userResizedOnce) {
                 userResizedOnce = true;
                 setSessionStorageItem("userResizedOnce", "true");
-                const resizeHandle = document.getElementById("resize-handle");
-                resizeHandle.style.backgroundColor = "transparent";
+                const resizeHandle =
+                    document.getElementById("resize-handle");
+                if (resizeHandle)
+                    resizeHandle.style.backgroundColor = "transparent";
             }
-            setLocalStorageItem("userDefinedFlexBasis", userDefinedFlexBasis);
+            setLocalStorageItem(
+                "userDefinedFlexBasis",
+                userDefinedFlexBasis,
+            );
         }
     }
 
-    // Stop resizing when the mouse button is released
     function stopResize() {
         isResizing = false;
         document.removeEventListener("mousemove", resizeChatList);
         document.removeEventListener("mouseup", stopResize);
     }
 
-    // Check if mouse is over the element or its children
+    // ============================================================
+    // UTILITY FUNCTIONS
+    // ============================================================
     function isMouseOver(element) {
-        return element.contains(eventParent.target);
+        return element && eventParent && element.contains(eventParent.target);
     }
 
-    // Calculate distance between two points
     function calculateDistance(pos1, pos2) {
         return Math.sqrt((pos1.x - pos2.x) ** 2 + (pos1.y - pos2.y) ** 2);
     }
 
-    // Check if mouse is near the locked position
-    function isNearLockPosition(x, y, lockPosition) {
-        const distance = calculateDistance(lockPosition, { x, y });
+    function isNearLockPosition(x, y, lockPos) {
+        const distance = calculateDistance(lockPos, { x, y });
         return distance <= clickThreshold;
     }
 
-    // Helper function to show notifications
+    // ============================================================
+    // NOTIFICATIONS
+    // ============================================================
     function showNotification(message, time = 5000) {
-        // if previous notification found, remove it
         const previousNotification = document.querySelector(
             "div.notification[role='alert']",
         );
@@ -247,12 +377,10 @@
         notification.style.transition = "opacity 0.5s";
         document.body.appendChild(notification);
 
-        // Fade in the notification
         setTimeout(() => {
             notification.style.opacity = "1";
         }, 100);
 
-        // Fade out and remove the notification after 3 seconds
         setTimeout(() => {
             notification.style.opacity = "0";
             setTimeout(() => {
@@ -262,8 +390,11 @@
         }, time);
     }
 
-    function changeActiveState(newactivestate, message = null, time = 3000) {
-        active = newactivestate;
+    // ============================================================
+    // STATE MANAGEMENT
+    // ============================================================
+    function changeActiveState(newActiveState, message = null, time = 3000) {
+        active = newActiveState;
         setSessionStorageItem("active", active);
         if (message === null) {
             message = notificationBasedOnActiveState(active);
@@ -271,6 +402,7 @@
         if (message) {
             showNotification(message, time);
         }
+        log("Active state changed to:", active);
     }
 
     function changeBlurEffectState(newBlurEffectState) {
@@ -278,6 +410,9 @@
         setSessionStorageItem("blurEffect", blurEffect);
     }
 
+    // ============================================================
+    // TOOLBAR
+    // ============================================================
     function createToolBar() {
         const customToolbar = document.createElement("div");
         customToolbar.id = "customToolbar";
@@ -296,12 +431,12 @@
             overlayButton.innerHTML = "🐵";
         }
         overlayButton.addEventListener("click", () => {
-            const overlayButton = document.getElementById("overlayButton");
+            const btn = document.getElementById("overlayButton");
             if (blurEffect) {
-                overlayButton.innerHTML = "🐵";
+                btn.innerHTML = "🐵";
                 createBlurEffect(false);
             } else {
-                overlayButton.innerHTML = "🙈";
+                btn.innerHTML = "🙈";
                 createBlurEffect(true);
             }
         });
@@ -309,22 +444,22 @@
 
         const githubLink = document.createElement("a");
         githubLink.id = "githubLink";
-        githubLink.href = "https://kshitizsharma.com.np/userscriptsupport";
+        githubLink.href =
+            "https://kshitizsharma.com.np/userscriptsupport";
         githubLink.innerHTML = "imxitiz<br><h6>(Support)</h6>";
         customToolbar.appendChild(githubLink);
+
+        log("Toolbar created");
     }
 
     function changeVisibilityOfToolbar(show = true) {
         const customToolbar = document.getElementById("customToolbar");
-        if (show) {
-            customToolbar.style.right = "0";
-        } else {
-            customToolbar.style.right = "-200px";
+        if (customToolbar) {
+            customToolbar.style.right = show ? "0" : "-200px";
         }
     }
 
     function updateToolBarVisibility() {
-        // if hovering in right side
         if (
             eventParent.clientX >= window.innerWidth - hideThreshold ||
             isMouseOver(document.getElementById("customToolbar"))
@@ -335,14 +470,15 @@
         }
     }
 
-    createToolBar();
+    // ============================================================
+    // BLUR EFFECT
+    // ============================================================
     function createBlurEffect(show = false) {
         let blurEffectElement = document.getElementById("blur-effect");
 
         changeBlurEffectState(show);
 
         if (!blurEffectElement) {
-            // Create the blur effect element only once
             blurEffectElement = document.createElement("div");
             blurEffectElement.id = "blur-effect";
             blurEffectElement.style.position = "fixed";
@@ -355,14 +491,13 @@
             blurEffectElement.style.backdropFilter = "blur(0px)";
             blurEffectElement.style.transition =
                 "background-color 0.5s ease, backdrop-filter 0.5s ease";
-            blurEffectElement.style.display = "none"; // Initially hidden
+            blurEffectElement.style.display = "none";
 
             function preventDefaultAndStopPropagation(event) {
                 event.preventDefault();
                 event.stopPropagation();
             }
 
-            // Add common event listeners
             blurEffectElement.addEventListener(
                 "click",
                 preventDefaultAndStopPropagation,
@@ -386,20 +521,20 @@
             document.body.appendChild(blurEffectElement);
         }
 
-        // Toggle the visibility of the blur effect
         if (show) {
             blurEffectElement.style.display = "block";
             setTimeout(() => {
-                blurEffectElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+                blurEffectElement.style.backgroundColor =
+                    "rgba(0, 0, 0, 0.5)";
                 blurEffectElement.style.backdropFilter = "blur(10px)";
-            }, 10); // Slight delay to trigger transition
+            }, 10);
             activateShortcutBlocker();
         } else {
             blurEffectElement.style.backgroundColor = "rgba(0, 0, 0, 0)";
             blurEffectElement.style.backdropFilter = "blur(0px)";
             setTimeout(() => {
                 blurEffectElement.style.display = "none";
-            }, 500); // Hide element after transition completes
+            }, 500);
             deactivateShortcutBlocker();
         }
     }
@@ -417,51 +552,103 @@
         document.removeEventListener("keydown", blockKeyboardShortcuts, true);
     }
 
-    function notificationBasedOnActiveState(activeState) {
-        if (activeState === 0) {
-            return "Now chat list is shown on hover.";
-        } else if (activeState === 1) {
-            return "Now chat list is always visible.";
-        } else if (activeState === 2) {
-            return "Now chat list is always hidden, but locked.";
-        } else if (activeState === 3) {
-            return "Now chat list is always hidden, but not locked.";
-        } else {
-            return null;
+    // ============================================================
+    // KEYBOARD SHORTCUTS
+    // ============================================================
+    function handleKeyDown(event) {
+        // Alt+S: Toggle sidebar visibility (cycle through states 0 → 3 → 0)
+        if (event.altKey && (event.key === "s" || event.key === "S")) {
+            event.preventDefault();
+            event.stopPropagation();
+            log("Alt+S pressed, current active:", active);
+            if (active === 0) {
+                changeActiveState(3); // Hide (unlocked)
+            } else if (active === 3) {
+                changeActiveState(0); // Back to normal hover mode
+            } else if (active === 1) {
+                changeActiveState(0); // Back to normal hover mode
+            } else if (active === 2) {
+                // Locked — don't toggle via keyboard, user must triple-click
+                showNotification(
+                    "Chat list is locked! Triple right-click at the lock position to unlock.",
+                );
+            }
+            // Immediately reflect
+            const sidebar = queryFirst(Selectors.sidebar, "sidebar");
+            if (sidebar) {
+                changeVisibility(sidebar, active === 1);
+            }
+            setSessionStorageItem("active", active);
         }
     }
 
-    // Triple click event listener
+    // ============================================================
+    // NOTIFICATION TEXT
+    // ============================================================
+    function notificationBasedOnActiveState(activeState) {
+        const messages = {
+            0: "Now chat list is shown on hover.",
+            1: "Now chat list is always visible.",
+            2: "Now chat list is always hidden, but locked.",
+            3: "Now chat list is always hidden, but not locked.",
+        };
+        return messages[activeState] || null;
+    }
+
+    // ============================================================
+    // TRIPLE CLICK HANDLER
+    // ============================================================
     function handleClick(event, clickcount = 0) {
         if (event.detail === 3 || clickcount === 3) {
-            const inboxSwitcher = document.querySelector(
-                inboxSwitcherElementSelector,
+            const inboxSwitcher = queryFirst(
+                Selectors.header,
+                "header",
             );
+            group("handleClick()");
+            log(
+                "active:",
+                active,
+                "| button:",
+                event.button,
+                "| isMouseOverHeader:",
+                inboxSwitcher ? isMouseOver(inboxSwitcher) : false,
+            );
+
             if (active === 0) {
-                if (isMouseOver(inboxSwitcher)) {
+                if (inboxSwitcher && isMouseOver(inboxSwitcher)) {
                     changeActiveState(1);
                 } else {
-                    // if triple right click then lock hidden
                     if (event.button === 2) {
                         active = 2;
-                        lockPosition = { x: event.clientX, y: event.clientY };
-                        setSessionStorageItem("lockPosition", JSON.stringify(lockPosition));
+                        lockPosition = {
+                            x: event.clientX,
+                            y: event.clientY,
+                        };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition),
+                        );
                         showNotification(
                             "You have to triple click exactly here to unlock the chat list.",
                         );
                     } else {
-                        // else or if triple left click then unlocked hidden
                         changeActiveState(3);
                     }
                 }
             } else if (active === 1) {
-                if (isMouseOver(inboxSwitcher)) {
+                if (inboxSwitcher && isMouseOver(inboxSwitcher)) {
                     changeActiveState(0);
                 } else {
                     if (event.button === 2) {
                         active = 2;
-                        lockPosition = { x: event.clientX, y: event.clientY };
-                        setSessionStorageItem("lockPosition", JSON.stringify(lockPosition));
+                        lockPosition = {
+                            x: event.clientX,
+                            y: event.clientY,
+                        };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition),
+                        );
                         showNotification(
                             "You have to triple click exactly here to unlock the chat list.",
                         );
@@ -471,11 +658,16 @@
                 }
             } else if (active === 2) {
                 if (wrongLockedPlaceAttempt > 16) {
-                    // no ned to check anything, just leave
+                    groupEnd();
                     return;
                 }
-                if (isNearLockPosition(event.clientX, event.clientY, lockPosition)) {
-                    // only right triple click can open the lock
+                if (
+                    isNearLockPosition(
+                        event.clientX,
+                        event.clientY,
+                        lockPosition,
+                    )
+                ) {
                     if (event.button === 2) {
                         wrongLockedPlaceAttempt = 0;
                         changeActiveState(0);
@@ -503,19 +695,30 @@
                         x: event.clientX,
                         y: event.clientY,
                     };
-                    const distance = calculateDistance(lockPosition, clickPosition);
+                    const distance = calculateDistance(
+                        lockPosition,
+                        clickPosition,
+                    );
                     if (distance <= clickThreshold * 1.2) {
-                        showNotification("You are near the locked position, try again!!!");
+                        showNotification(
+                            "You are near the locked position, try again!!!",
+                        );
                     }
                 }
             } else if (active === 3) {
-                if (isMouseOver(inboxSwitcher)) {
+                if (inboxSwitcher && isMouseOver(inboxSwitcher)) {
                     changeActiveState(1);
                 } else {
                     if (event.button === 2) {
                         active = 2;
-                        lockPosition = { x: event.clientX, y: event.clientY };
-                        setSessionStorageItem("lockPosition", JSON.stringify(lockPosition));
+                        lockPosition = {
+                            x: event.clientX,
+                            y: event.clientY,
+                        };
+                        setSessionStorageItem(
+                            "lockPosition",
+                            JSON.stringify(lockPosition),
+                        );
                         showNotification(
                             "You have to triple click exactly here to unlock the chat list.",
                         );
@@ -524,18 +727,67 @@
                     }
                 }
             }
+
             // Immediately reflect the change
-            changeVisibility(
-                document.querySelector(sidebarElementSelector),
-                active === 1,
-            );
+            const sidebar = queryFirst(Selectors.sidebar, "sidebar");
+            if (sidebar) {
+                changeVisibility(sidebar, active === 1);
+            }
             setSessionStorageItem("active", active);
+            groupEnd();
         }
     }
 
-    // Initialize the script
+    // ============================================================
+    // DOM OBSERVER — Re-initialize if WhatsApp re-renders the layout
+    // ============================================================
+    function setupMutationObserver() {
+        const observer = new MutationObserver((mutations) => {
+            if (hasInitialized) return;
+
+            for (const mutation of mutations) {
+                if (mutation.type === "childList") {
+                    const sidebar = queryFirst(
+                        Selectors.sidebar,
+                        "sidebar",
+                    );
+                    if (sidebar && !hasInitialized) {
+                        log(
+                            "MutationObserver: sidebar detected, initializing...",
+                        );
+                        initialize();
+                        break;
+                    }
+                }
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+        log("MutationObserver started");
+    }
+
+    // ============================================================
+    // MAIN INIT
+    // ============================================================
     function init() {
+        log("=== INIT START ===");
+        log("DOM state:", {
+            side: !!document.querySelector("#side"),
+            two: !!document.querySelector("div.two"),
+            header: !!document.querySelector("header"),
+            paneSide: !!document.querySelector("#pane-side"),
+            sidebarContainer: !!document.querySelector(
+                "div.two > div:has(> #side)",
+            ),
+        });
+
+        createToolBar();
         initialize();
+        setupMutationObserver();
+
         document.addEventListener("mousemove", (event) => {
             eventParent = event;
             updateSidebarVisibility();
@@ -543,6 +795,9 @@
         });
 
         document.addEventListener("click", handleClick);
+
+        // Alt+S keyboard shortcut
+        document.addEventListener("keydown", handleKeyDown);
 
         let lastRightClickTime = 0;
         let rightClickCount = 0;
@@ -587,9 +842,13 @@
 
             handleClick(event, rightClickCount);
         });
+
+        log("=== INIT COMPLETE ===");
     }
 
-    // Add styles
+    // ============================================================
+    // STYLES
+    // ============================================================
     const styles = `
         #customToolbar {
             position: fixed;
@@ -600,18 +859,17 @@
             align-items: center;
             justify-content: center;
             background: linear-gradient(
-                            45deg, 
-                            rgba(255, 69, 0, 0.8), /* Red-Orange */
-                            rgba(255, 140, 0, 0.8), /* Orange */
-                            rgba(255, 215, 0, 0.8)  /* Yellow */
-                        );
+                45deg,
+                rgba(255, 69, 0, 0.8),
+                rgba(255, 140, 0, 0.8),
+                rgba(255, 215, 0, 0.8)
+            );
             z-index: 1000000;
             padding: 5px;
             border-radius: 10px;
             transition: right 0.5s ease;
         }
-        
-        
+
         #overlay {
             position: fixed;
             top: 0;
@@ -621,7 +879,7 @@
             display: none;
             z-index: 99999;
         }
-            
+
         #overlayButton {
             background-color: #333;
             color: #fff;
@@ -632,12 +890,12 @@
             border-radius: 10px;
             font-size: 2.5rem;
         }
-        
+
         #overlayButton:hover {
             background-color: #555;
             filter: drop-shadow(0 0 5px #fff);
         }
-            
+
         #githubLink {
             color: #285ed0;
             text-decoration: none;
@@ -656,7 +914,7 @@
             font-size: 1rem;
             font-weight: normal;
         }
-            
+
         #githubLink:hover {
             text-decoration: underline;
         }
@@ -665,5 +923,13 @@
     const styleElement = document.createElement("style");
     styleElement.textContent = styles;
     document.head.appendChild(styleElement);
-    init();
+
+    // ============================================================
+    // BOOT
+    // ============================================================
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        init();
+    }
 })();
