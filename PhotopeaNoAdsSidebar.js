@@ -1,42 +1,58 @@
 // ==UserScript==
 // @name        Photopea No Ads Sidebar
 // @namespace   imxitiz's-Scripts
-// @version     0.1
-// @grant       unsafeWindow
+// @version     0.2
+// @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
 // @match       https://www.photopea.com/*
 // @description Remove the gap of ads Sidebar
-// @run-at      document-idle
+// @run-at      document-start
 // @downloadURL https://update.greasyfork.org/scripts/503627/Photopea%20No%20Ads%20Sidebar.user.js
 // @updateURL   https://update.greasyfork.org/scripts/503627/Photopea%20No%20Ads%20Sidebar.meta.js
 // ==/UserScript==
 
-function resize() {
-  const adWidth =
-    document.querySelector(".app").offsetWidth -
-    document.querySelector(".app > div").offsetWidth;
-  Object.defineProperty(window, "innerWidth", {
-    get() {
-      return parseInt(document.documentElement.offsetWidth, 10) + adWidth;
-    },
-  });
-  window.dispatchEvent(new Event("resize"));
-}
+(function() {
+  let W, busy = false;
 
-const observer = new MutationObserver((mutations) => {
-  for (const mutation of mutations) {
-    for (const node of mutation.addedNodes) {
-      if (node.nodeType === 1 && node.matches(".app *")) {
-        observer.disconnect();
-        resize();
-        return;
-      }
-    }
+  function fix() {
+    if (busy) return;
+    busy = true;
+    try {
+      const app = document.querySelector('.app');
+      if (!app) { busy = false; return; }
+      if (!W) W = app.offsetWidth + 'px';
+
+      // Remove ad sidebar (2nd child of .app) and expand everything to full width
+      const ad = app.children[1];
+      if (ad) ad.remove();
+
+      app.children[0].style.width = W;
+      app.children[0].style.minWidth = W;
+
+      document.querySelectorAll('.flexrow,.panelblock,.panelblock > div,.panelblock .body,.panelhead')
+        .forEach(el => {
+          el.style.width = W;
+          el.style.minWidth = W;
+          el.style.maxWidth = W;
+        });
+
+      // Expand all direct children of main content (toolbar, editor, etc.)
+      const main = app.children[0];
+      if (main) Array.from(main.children).forEach(el => {
+        el.style.width = W;
+        el.style.minWidth = W;
+        el.style.maxWidth = W;
+      });
+    } catch(e) {}
+    busy = false;
   }
-});
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-});
+  const obs = new MutationObserver(fix);
+  function start() {
+    if (!document.body) { requestAnimationFrame(start); return; }
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    fix();
+  }
+  start();
+})();
