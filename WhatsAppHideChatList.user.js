@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        WhatsApp Hide Chat List
 // @namespace   imxitiz's-Script
-// @version     3.1.0
+// @version     3.1.1
 // @grant       none
 // @license     GNU GPLv3
 // @author      imxitiz
@@ -55,6 +55,9 @@
         ],
     };
 
+    // Cache to avoid logging "Found X" on every mousemove
+    const foundElements = {};
+
     /**
      * Try multiple selectors and return the first match.
      * Logs which strategy succeeded for debugging.
@@ -70,7 +73,11 @@
                             `Selector fallback #${i} for "${label}": "${sel}"`,
                         );
                     }
-                    log(`Found "${label}" with: "${sel}"`);
+                    // Only log "Found" once per label to avoid console spam
+                    if (!foundElements[label]) {
+                        foundElements[label] = true;
+                        log(`Found "${label}" with: "${sel}"`);
+                    }
                     return el;
                 }
             } catch (e) {
@@ -176,8 +183,16 @@
         return Math.round(parentWidth * (userDefinedFlexBasis / 100));
     }
 
+    // Track last visibility state to avoid logging every mousemove
+    let lastVisibility = null;
+
     function changeVisibility(sidebar, show) {
         if (!sidebar) return;
+        // Only log when visibility state actually changes
+        if (lastVisibility !== show) {
+            lastVisibility = show;
+            log("Visibility changed:", show ? "SHOW" : "HIDE");
+        }
         if (show) {
             const px = getSidebarPixelWidth(sidebar);
             sidebar.style.maxWidth = `${px}px`;
@@ -185,14 +200,35 @@
             sidebar.style.flex = `0 0 ${px}px`;
             sidebar.style.padding = "";
             sidebar.style.width = "";
+            sidebar.style.overflow = "hidden";
+            // Restore overflow on children that WhatsApp sets to "visible"
+            const visChildren = sidebar.querySelectorAll('*');
+            for (const ch of visChildren) {
+                ch.style.overflow = "";
+            }
+            // Restore border on drawer-middle
+            const drawerMiddle = document.querySelector('[data-testid="drawer-middle"]');
+            if (drawerMiddle && !userResizedOnce) {
+                drawerMiddle.style.borderInlineStartWidth = "";
+            }
         } else {
             sidebar.style.width = "0";
             sidebar.style.maxWidth = "0";
             sidebar.style.minWidth = "0";
             sidebar.style.flex = "0 0 0";
             sidebar.style.padding = "0";
+            sidebar.style.overflow = "hidden";
+            // Force all descendants to overflow:hidden so nothing bleeds through
+            const allChildren = sidebar.querySelectorAll('*');
+            for (const ch of allChildren) {
+                ch.style.overflow = "hidden";
+            }
+            // Remove the 1px border on drawer-middle when hiding
+            const drawerMiddle = document.querySelector('[data-testid="drawer-middle"]');
+            if (drawerMiddle) {
+                drawerMiddle.style.borderInlineStartWidth = "0px";
+            }
         }
-        log("Visibility changed:", show ? "SHOW" : "HIDE");
     }
 
     // ============================================================
@@ -250,17 +286,19 @@
             const isMouseOverSidebar =
                 isMouseOver(sidebar) || isMouseOver(inboxSwitcher);
 
-            group("updateSidebarVisibility()");
-            log(
-                "active:",
-                active,
-                "| isMouseOverSidebar:",
-                isMouseOverSidebar,
-                "| isResizing:",
-                isResizing,
-                "| mouseX:",
-                eventParent.clientX,
-            );
+            if (DEBUG) {
+                group("updateSidebarVisibility()");
+                log(
+                    "active:",
+                    active,
+                    "| isMouseOverSidebar:",
+                    isMouseOverSidebar,
+                    "| isResizing:",
+                    isResizing,
+                    "| mouseX:",
+                    eventParent.clientX,
+                );
+            }
 
             if (active === 1) {
                 changeVisibility(sidebar, true);
@@ -278,7 +316,7 @@
                     changeVisibility(sidebar, false);
                 }
             }
-            groupEnd();
+            if (DEBUG) groupEnd();
         } else {
             warn(
                 "Missing elements — sidebar:",
@@ -302,7 +340,7 @@
                     containerWidth) *
                 100;
 
-            if (newFlexBasis >= 10 && newFlexBasis <= 100) {
+            if (newFlexBasis >= 5 && newFlexBasis <= 80) {
                 userDefinedFlexBasis = newFlexBasis;
                 const px = getSidebarPixelWidth(sidebar);
                 sidebar.style.maxWidth = `${px}px`;
@@ -556,7 +594,7 @@
     // KEYBOARD SHORTCUTS
     // ============================================================
     function handleKeyDown(event) {
-        // Alt+S: Toggle sidebar visibility (cycle through states 0 → 3 → 0)
+        // Alt+S: Cycle sidebar states: 0 (hover) → 3 (hidden) → 1 (always visible) → 0
         if (event.altKey && (event.key === "s" || event.key === "S")) {
             event.preventDefault();
             event.stopPropagation();
@@ -564,16 +602,14 @@
             if (active === 0) {
                 changeActiveState(3); // Hide (unlocked)
             } else if (active === 3) {
-                changeActiveState(0); // Back to normal hover mode
+                changeActiveState(1); // Always visible
             } else if (active === 1) {
                 changeActiveState(0); // Back to normal hover mode
             } else if (active === 2) {
-                // Locked — don't toggle via keyboard, user must triple-click
                 showNotification(
                     "Chat list is locked! Triple right-click at the lock position to unlock.",
                 );
             }
-            // Immediately reflect
             const sidebar = queryFirst(Selectors.sidebar, "sidebar");
             if (sidebar) {
                 changeVisibility(sidebar, active === 1);
